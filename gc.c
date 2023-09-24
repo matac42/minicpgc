@@ -113,6 +113,7 @@ void *mini_cpgc_malloc(size_t req_size) {
     return NULL;
   }
 
+  p = (Object_Header *)from_start->current;
   p->size = req_size;
   from_start->current = from_start->current + req_size;
 
@@ -142,15 +143,15 @@ void *mini_cpgc_malloc(size_t req_size) {
 /* ========================================================================== */
 
 static void test(void) {
+  void *p;
+
   heap_init(TINY_HEAP_SIZE);
-  printf("from_start : %zx, to_start : %zx, current : %zx\n",
-         (size_t)from_start, (size_t)to_start, from_start->current);
 
   /* malloc check */
-  mini_cpgc_malloc(1);
-  printf("from_start : %zx, to_start : %zx, current : %zx\n",
-         (size_t)from_start, (size_t)to_start, from_start->current);
-  assert((size_t)from_start == (size_t)(from_start->current - 8));
+  unsigned int alloc_size = 9;
+  mini_cpgc_malloc(alloc_size);
+  assert((size_t)from_start ==
+         (size_t)(from_start->current - ALIGN(alloc_size, PTRSIZE)));
 }
 
 int main(int argc, char **argv) {
