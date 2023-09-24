@@ -33,3 +33,6 @@ rubinius(baker gc)ではroot.hppにRootオブジェクトがあり、globalsで�
 
 とりあえずヒープ領域を固定で作るか。
 舞台がないとなんともコーディングしづらい。
+
+allocするにはcurrentカーソルが必要。頭から順番にallocしていく。
+最初はfrom_start == currentだが、allocするとそのサイズ分だけcurrentがずれていく。

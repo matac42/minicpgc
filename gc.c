@@ -16,17 +16,41 @@
 #include <unistd.h>
 
 /* ========================================================================== */
-/*  mini_cpgc_malloc */
+/*  mini_cpgc_malloc                                                          */
 /* ========================================================================== */
 
+/**
+ * @struct Object_Header
+ * @brief Object metadata for garbage-collected heap objects.
+ *
+ * This struct stores metadata for each object allocated in the heap.
+ * It includes information like the size of the object.
+ *
+ * @var Object_Header::size
+ * The size of the object, in bytes.
+ */
 typedef struct object_header {
-  size_t flags;
   size_t size;
-  size_t *forwarding;
 } Object_Header;
 
+/**
+ * @struct Heap_Header
+ * @brief Metadata for managing the heap used in garbage collection.
+ *
+ * This struct contains metadata for heap management, including the size of the
+ * heap and a pointer to the current position within the heap for subsequent
+ * allocations.
+ *
+ * @var Heap_Header::size
+ * The total size of the heap, in bytes.
+ *
+ * @var Heap_Header::current
+ * The current position within the heap for new allocations. This is updated
+ * each time a new object is allocated.
+ */
 typedef struct heap_header {
   size_t size;
+  size_t current;
 } Heap_Header;
 
 Heap_Header *from_start;
@@ -58,19 +82,47 @@ void heap_init(size_t req_size) {
 
   from_start = (Heap_Header *)ALIGN((size_t)p1, PTRSIZE);
   from_start->size = req_size;
+  from_start->current = (size_t)from_start;
 
   p2 = malloc(req_size + PTRSIZE + HEADER_SIZE);
 
   to_start = (Heap_Header *)ALIGN((size_t)p2, PTRSIZE);
   to_start->size = req_size;
+  to_start->current = (size_t)to_start;
 }
 
-// void *mini_cpgc_malloc(size_t req_size) {
-//   Object_Header *p;
-// }
+/**
+ * @fn void *mini_cpgc_malloc(size_t req_size)
+ * @brief Allocates memory in the From-space heap area.
+ *
+ * Allocates a memory block of size req_size in the From-space heap.
+ * The function aligns the requested size to the nearest PTRSIZE boundary.
+ * If the size is zero or negative, the function returns NULL.
+ *
+ * @param req_size The requested size of the memory block in bytes.
+ * @return A pointer to the allocated memory block, or NULL if the allocation
+ * failed.
+ * @warning The function does not check for heap overflow or perform garbage
+ * collection.
+ */
+void *mini_cpgc_malloc(size_t req_size) {
+  Object_Header *p;
+
+  req_size = ALIGN(req_size, PTRSIZE);
+  if (req_size <= 0) {
+    return NULL;
+  }
+
+  p->size = req_size;
+  from_start->current = from_start->current + req_size;
+
+  return (void *)(p + 1);
+}
+
+// void mini_cpgc_free(void *ptr) {}
 
 /* ========================================================================== */
-/*  mini_cpgc */
+/*  mini_cpgc                                                                 */
 /* ========================================================================== */
 
 // void copying(void) {
@@ -84,15 +136,21 @@ void heap_init(size_t req_size) {
 // Header copy(Header) {}
 
 // void swap(size_t from_start, size_t to_start) {}
-/* ==========================================================================
- */
-/*  test */
-/* ==========================================================================
- */
+
+/* ========================================================================== */
+/*  test                                                                      */
+/* ========================================================================== */
 
 static void test(void) {
   heap_init(TINY_HEAP_SIZE);
-  printf("from_start : %p, to_start : %p\n", from_start, to_start);
+  printf("from_start : %zx, to_start : %zx, current : %zx\n",
+         (size_t)from_start, (size_t)to_start, from_start->current);
+
+  /* malloc check */
+  mini_cpgc_malloc(1);
+  printf("from_start : %zx, to_start : %zx, current : %zx\n",
+         (size_t)from_start, (size_t)to_start, from_start->current);
+  assert((size_t)from_start == (size_t)(from_start->current - 8));
 }
 
 int main(int argc, char **argv) {
