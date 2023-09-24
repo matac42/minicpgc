@@ -28,9 +28,13 @@
  *
  * @var Object_Header::size
  * The size of the object, in bytes.
+ *
+ * @var Object_Header::next_free
+ * A pointer to the next free object in the free list.
  */
 typedef struct object_header {
   size_t size;
+  struct object_header *next_free;
 } Object_Header;
 
 /**
@@ -53,13 +57,16 @@ typedef struct heap_header {
   size_t current;
 } Heap_Header;
 
+Object_Header *free_list;
 Heap_Header *from_start;
 Heap_Header *to_start;
 
 #define TINY_HEAP_SIZE 0x4000
 #define PTRSIZE ((size_t)sizeof(void *))
-#define HEADER_SIZE ((size_t)sizeof(Heap_Header))
+#define HEAP_HEADER_SIZE ((size_t)sizeof(Heap_Header))
+#define OBJECT_HEADER_SIZE ((size_t)sizeof(Object_Header))
 #define ALIGN(x, a) (((x) + (a - 1)) & ~(a - 1))
+#define NEXT_HEADER(x) ((Object_Header *)((size_t)(x + 1) + x->size))
 
 /**
  * @fn void heap_init(size_t req_size)
@@ -78,13 +85,13 @@ void heap_init(size_t req_size) {
   if (req_size < TINY_HEAP_SIZE)
     req_size = TINY_HEAP_SIZE;
 
-  p1 = malloc(req_size + PTRSIZE + HEADER_SIZE);
+  p1 = malloc(req_size + PTRSIZE + HEAP_HEADER_SIZE);
 
   from_start = (Heap_Header *)ALIGN((size_t)p1, PTRSIZE);
   from_start->size = req_size;
   from_start->current = (size_t)from_start;
 
-  p2 = malloc(req_size + PTRSIZE + HEADER_SIZE);
+  p2 = malloc(req_size + PTRSIZE + HEAP_HEADER_SIZE);
 
   to_start = (Heap_Header *)ALIGN((size_t)p2, PTRSIZE);
   to_start->size = req_size;
@@ -120,7 +127,53 @@ void *mini_cpgc_malloc(size_t req_size) {
   return (void *)(p + 1);
 }
 
-// void mini_cpgc_free(void *ptr) {}
+/**
+ * @fn void mini_cpgc_free(void *ptr)
+ * @brief Frees a memory block allocated by mini_cpgc_malloc.
+ *
+ * This function takes a pointer to a memory block previously allocated with
+ * mini_cpgc_malloc and adds it back to the free list for potential future
+ * reuse.
+ *
+ * @param ptr A pointer to the memory block to be freed.
+ */
+void mini_cpgc_free(void *ptr) {
+  Object_Header *target, *hit;
+
+  target = (Object_Header *)ptr - 1;
+
+  if (free_list == NULL) {
+    free_list = target;
+    target->next_free = target;
+
+    return;
+  }
+
+  /* search join point of target to free_list */
+  for (hit = free_list; !(target > hit && target < hit->next_free);
+       hit = hit->next_free)
+    /* heap end? And hit(search)? */
+    if (hit >= hit->next_free && (target > hit || target < hit->next_free))
+      break;
+
+  if (NEXT_HEADER(target) == hit->next_free) {
+    /* merge */
+    target->size += (hit->next_free->size + OBJECT_HEADER_SIZE);
+    target->next_free = hit->next_free->next_free;
+  } else {
+    /* join next free block */
+    target->next_free = hit->next_free;
+  }
+  if (NEXT_HEADER(hit) == target) {
+    /* merge */
+    hit->size += (target->size + OBJECT_HEADER_SIZE);
+    hit->next_free = target->next_free;
+  } else {
+    /* join before free block */
+    hit->next_free = target;
+  }
+  free_list = hit;
+}
 
 /* ========================================================================== */
 /*  mini_cpgc                                                                 */
@@ -142,16 +195,23 @@ void *mini_cpgc_malloc(size_t req_size) {
 /*  test                                                                      */
 /* ========================================================================== */
 
-static void test(void) {
+static void test_mini_cpgc_malloc_free(void) {
   void *p;
-
-  heap_init(TINY_HEAP_SIZE);
 
   /* malloc check */
   unsigned int alloc_size = 9;
-  mini_cpgc_malloc(alloc_size);
+  p = mini_cpgc_malloc(alloc_size);
   assert((size_t)from_start ==
          (size_t)(from_start->current - ALIGN(alloc_size, PTRSIZE)));
+
+  /* free check */
+  mini_cpgc_free(p);
+  assert((Object_Header *)p - 1 == free_list);
+}
+
+static void test(void) {
+  heap_init(TINY_HEAP_SIZE);
+  test_mini_cpgc_malloc_free();
 }
 
 int main(int argc, char **argv) {

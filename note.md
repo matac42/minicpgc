@@ -36,3 +36,5 @@ rubinius(baker gc)ではroot.hppにRootオブジェクトがあり、globalsで�
 
 allocするにはcurrentカーソルが必要。頭から順番にallocしていく。
 最初はfrom_start == currentだが、allocするとそのサイズ分だけcurrentがずれていく。
+
+freeする == free_listに追加する
