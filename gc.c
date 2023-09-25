@@ -20,22 +20,22 @@
 /* ========================================================================== */
 
 /**
- * @struct Object_Header
+ * @struct Block_Header
  * @brief Object metadata for garbage-collected heap objects.
  *
  * This struct stores metadata for each object allocated in the heap.
  * It includes information like the size of the object.
  *
- * @var Object_Header::size
+ * @var Block_Header::size
  * The size of the object, in bytes.
  *
- * @var Object_Header::next_free
+ * @var Block_Header::next_free
  * A pointer to the next free object in the free list.
  */
 typedef struct object_header {
   size_t size;
   struct object_header *next_free;
-} Object_Header;
+} Block_Header;
 
 /**
  * @struct Heap_Header
@@ -57,16 +57,16 @@ typedef struct heap_header {
   size_t current;
 } Heap_Header;
 
-Object_Header *free_list;
+Block_Header *free_list;
 Heap_Header *from_start;
 Heap_Header *to_start;
 
 #define TINY_HEAP_SIZE 0x4000
 #define PTRSIZE ((size_t)sizeof(void *))
 #define HEAP_HEADER_SIZE ((size_t)sizeof(Heap_Header))
-#define OBJECT_HEADER_SIZE ((size_t)sizeof(Object_Header))
+#define OBJECT_HEADER_SIZE ((size_t)sizeof(Block_Header))
 #define ALIGN(x, a) (((x) + (a - 1)) & ~(a - 1))
-#define NEXT_HEADER(x) ((Object_Header *)((size_t)(x + 1) + x->size))
+#define NEXT_HEADER(x) ((Block_Header *)((size_t)(x + 1) + x->size))
 
 /**
  * @fn void heap_init(size_t req_size)
@@ -113,14 +113,14 @@ void heap_init(size_t req_size) {
  * collection.
  */
 void *mini_cpgc_malloc(size_t req_size) {
-  Object_Header *p;
+  Block_Header *p;
 
   req_size = ALIGN(req_size, PTRSIZE);
   if (req_size <= 0) {
     return NULL;
   }
 
-  p = (Object_Header *)from_start->current;
+  p = (Block_Header *)from_start->current;
   p->size = req_size;
   from_start->current = from_start->current + req_size;
 
@@ -138,9 +138,9 @@ void *mini_cpgc_malloc(size_t req_size) {
  * @param ptr A pointer to the memory block to be freed.
  */
 void mini_cpgc_free(void *ptr) {
-  Object_Header *target, *hit;
+  Block_Header *target, *hit;
 
-  target = (Object_Header *)ptr - 1;
+  target = (Block_Header *)ptr - 1;
 
   if (free_list == NULL) {
     free_list = target;
@@ -206,7 +206,7 @@ static void test_mini_cpgc_malloc_free(void) {
 
   /* free check */
   mini_cpgc_free(p);
-  assert((Object_Header *)p - 1 == free_list);
+  assert((Block_Header *)p - 1 == free_list);
 }
 
 static void test(void) {
