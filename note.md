@@ -48,3 +48,9 @@ freeする == free_listに追加する
 TODO: forwarding pointer
 TODO: check heap overflow
 TODO: alloc from free_list
+
+今はFL_ALLOCでアロケートを判定して、されていなければcopyしないという動作をしている。
+しかし本当にやりたいのはルートから辿れるかどうかで判定すること。
+
+TODO: prepare root
+TODO: reset ref after copy

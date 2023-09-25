@@ -80,6 +80,7 @@ Heap_Header *to_start;
 
 #define FL_ALLOC 0x1
 #define FL_FREE 0x0
+#define FL_TEST(x, f) (((Block_Header *)x)->flags & f)
 
 /**
  * @fn void heap_init(size_t req_size)
@@ -269,6 +270,18 @@ static void test_mini_cpgc_malloc_free(void) {
   /* free check */
   mini_cpgc_free(p);
   assert((Block_Header *)p - 1 == free_list);
+}
+
+static void test_garbage_collect(void) {
+  void *p1, *p2;
+  p1 = mini_cpgc_malloc(100);
+  p2 = mini_cpgc_malloc(100);
+  assert(FL_TEST(((Block_Header *)p1 - 1), FL_ALLOC));
+  assert(FL_TEST(((Block_Header *)p2 - 1), FL_ALLOC));
+
+  mini_cpgc_free(p1);
+  copying();
+  assert(FL_TEST((Block_Header *)((from_start + 1) - 1), FL_ALLOC));
 }
 
 static void test(void) {
