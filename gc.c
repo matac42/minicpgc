@@ -32,9 +32,9 @@
  * @var Block_Header::next_free
  * A pointer to the next free object in the free list.
  */
-typedef struct object_header {
+typedef struct block_header {
   size_t size;
-  struct object_header *next_free;
+  struct block_header *next_free;
 } Block_Header;
 
 /**
