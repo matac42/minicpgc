@@ -26,6 +26,10 @@
  * This struct stores metadata for each object allocated in the heap.
  * It includes information like the size of the object.
  *
+ * @var Block_Header::flags
+ * Flags indicating the state of the block. Use FL_ALLOC for allocated blocks
+ * and FL_FREE for blocks that are in the free list.
+ *
  * @var Block_Header::size
  * The size of the object, in bytes.
  *
@@ -33,6 +37,7 @@
  * A pointer to the next free object in the free list.
  */
 typedef struct block_header {
+  size_t flags;
   size_t size;
   struct block_header *next_free;
 } Block_Header;
@@ -51,10 +56,15 @@ typedef struct block_header {
  * @var Heap_Header::current
  * The current position within the heap for new allocations. This is updated
  * each time a new object is allocated.
+ *
+ * @var Heap_Header::end
+ * The end position of the heap. This marks the last byte that can be allocated
+ * within the heap.
  */
 typedef struct heap_header {
   size_t size;
   size_t current;
+  size_t end;
 } Heap_Header;
 
 Block_Header *free_list;
@@ -64,9 +74,12 @@ Heap_Header *to_start;
 #define TINY_HEAP_SIZE 0x4000
 #define PTRSIZE ((size_t)sizeof(void *))
 #define HEAP_HEADER_SIZE ((size_t)sizeof(Heap_Header))
-#define OBJECT_HEADER_SIZE ((size_t)sizeof(Block_Header))
+#define BLOCK_HEADER_SIZE ((size_t)sizeof(Block_Header))
 #define ALIGN(x, a) (((x) + (a - 1)) & ~(a - 1))
 #define NEXT_HEADER(x) ((Block_Header *)((size_t)(x + 1) + x->size))
+
+#define FL_ALLOC 0x1
+#define FL_FREE 0x0
 
 /**
  * @fn void heap_init(size_t req_size)
@@ -89,13 +102,15 @@ void heap_init(size_t req_size) {
 
   from_start = (Heap_Header *)ALIGN((size_t)p1, PTRSIZE);
   from_start->size = req_size;
-  from_start->current = (size_t)from_start;
+  from_start->current = (size_t)(from_start + 1);
+  from_start->end = (size_t)(from_start + 1 + req_size);
 
   p2 = malloc(req_size + PTRSIZE + HEAP_HEADER_SIZE);
 
   to_start = (Heap_Header *)ALIGN((size_t)p2, PTRSIZE);
   to_start->size = req_size;
-  to_start->current = (size_t)to_start;
+  to_start->current = (size_t)(to_start + 1);
+  to_start->end = (size_t)(to_start + 1 + req_size);
 }
 
 /**
@@ -113,7 +128,7 @@ void heap_init(size_t req_size) {
  * collection.
  */
 void *mini_cpgc_malloc(size_t req_size) {
-  Block_Header *p;
+  Block_Header *p, *prev;
 
   req_size = ALIGN(req_size, PTRSIZE);
   if (req_size <= 0) {
@@ -122,6 +137,7 @@ void *mini_cpgc_malloc(size_t req_size) {
 
   p = (Block_Header *)from_start->current;
   p->size = req_size;
+  p->flags = FL_ALLOC;
   from_start->current = from_start->current + req_size;
 
   return (void *)(p + 1);
@@ -145,6 +161,7 @@ void mini_cpgc_free(void *ptr) {
   if (free_list == NULL) {
     free_list = target;
     target->next_free = target;
+    target->flags = FL_FREE;
 
     return;
   }
@@ -158,7 +175,7 @@ void mini_cpgc_free(void *ptr) {
 
   if (NEXT_HEADER(target) == hit->next_free) {
     /* merge */
-    target->size += (hit->next_free->size + OBJECT_HEADER_SIZE);
+    target->size += (hit->next_free->size + BLOCK_HEADER_SIZE);
     target->next_free = hit->next_free->next_free;
   } else {
     /* join next free block */
@@ -166,7 +183,7 @@ void mini_cpgc_free(void *ptr) {
   }
   if (NEXT_HEADER(hit) == target) {
     /* merge */
-    hit->size += (target->size + OBJECT_HEADER_SIZE);
+    hit->size += (target->size + BLOCK_HEADER_SIZE);
     hit->next_free = target->next_free;
   } else {
     /* join before free block */
@@ -179,17 +196,62 @@ void mini_cpgc_free(void *ptr) {
 /*  mini_cpgc                                                                 */
 /* ========================================================================== */
 
-// void copying(void) {
-//   size_t free = to_start;
-//   for () {
-//   }
-//   copy();
-//   swap();
-// }
+/**
+ * @brief Copy a block from the "from" heap to the "to" heap.
+ *
+ * This function copies a block, including its header, from the source heap
+ * to the destination heap. The destination heap's free pointer is then
+ * updated.
+ *
+ * @param from_block Pointer to the block in the "from" heap to be copied.
+ * @param pfree Pointer to the current free space in the "to" heap.
+ * @return Returns a pointer to the new block in the "to" heap.
+ */
+Block_Header *copy(Block_Header *from_block, void *pfree) {
+  Block_Header *to_block;
 
-// Header copy(Header) {}
+  to_block = memcpy(pfree, from_block, BLOCK_HEADER_SIZE + from_block->size);
+  pfree = (void *)(pfree + BLOCK_HEADER_SIZE + from_block->size);
 
-// void swap(size_t from_start, size_t to_start) {}
+  return to_block;
+}
+
+/**
+ * @brief Swap the "from" and "to" heaps.
+ *
+ * This function swaps the pointers for the "from" and "to" heaps,
+ * effectively making the "to" heap the new "from" heap for the next
+ * garbage collection cycle.
+ */
+void swap() {
+  Heap_Header *tmp;
+
+  tmp = from_start;
+  from_start = to_start;
+  to_start = tmp;
+
+  free_list = NULL;
+}
+
+/**
+ * @brief Perform the copying garbage collection.
+ *
+ * This function iterates over all the blocks in the "from" heap, copies
+ * the allocated blocks to the "to" heap, and then swaps the heaps.
+ */
+void copying(void) {
+  Block_Header *p;
+  void *pfree = (void *)to_start + 1;
+
+  for (p = (Block_Header *)from_start + 1; (size_t)p < (size_t)from_start->end;
+       p = NEXT_HEADER(p)) {
+    if (p->flags == FL_ALLOC) {
+      copy(p, pfree);
+    }
+  }
+
+  swap();
+}
 
 /* ========================================================================== */
 /*  test                                                                      */
@@ -201,7 +263,7 @@ static void test_mini_cpgc_malloc_free(void) {
   /* malloc check */
   unsigned int alloc_size = 9;
   p = mini_cpgc_malloc(alloc_size);
-  assert((size_t)from_start ==
+  assert((size_t)(from_start + 1) ==
          (size_t)(from_start->current - ALIGN(alloc_size, PTRSIZE)));
 
   /* free check */

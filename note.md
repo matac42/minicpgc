@@ -38,3 +38,13 @@ allocするにはcurrentカーソルが必要。頭から順番にallocしてい
 最初はfrom_start == currentだが、allocするとそのサイズ分だけcurrentがずれていく。
 
 freeする == free_listに追加する
+
+なんか間違ってる気がしなくもないけどとりあえずブロックをリンクリストにしてそれを走査する。
+
+解放されているか否かをフラグを入れて判定するか、free_listを走査して判定するか。
+フラグにしよう。swap()でfree_listは初期化される。
+ヒープ走査の終了点が必要。ヒープサイズで計算しても良いかもしれないがendメンバを追加しよう。
+
+TODO: forwarding pointer
+TODO: check heap overflow
+TODO: alloc from free_list
